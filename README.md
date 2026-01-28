@@ -4,5 +4,8 @@
 
 <img width="1040" height="320" alt="image" src="https://github.com/user-attachments/assets/f1ffc492-193c-4ebc-948b-950b685546bd" />
 
+<img width="1364" height="447" alt="image" src="https://github.com/user-attachments/assets/f72ae982-9c51-45c5-94c3-9a7bcacfac25" />
+
+
 
 https://altilunium.github.io/wdlist/
