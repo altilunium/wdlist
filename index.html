@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wdlist</title>
+     <link rel="icon" href="https://www.wikidata.org/static/favicon/wikidata.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body { background-color: #f3f4f6; font-size: 14px; }
+        .ghost { opacity: 0.5; background: #c8ebfb; }
+        .drag-handle { cursor: grab; }
+        .drag-handle:active { cursor: grabbing; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Sidebar Transition */
+        #sidebar { transition: margin-left 0.3s ease-in-out; }
+        .sidebar-closed { margin-left: -25%; }
+        /* Mobile adjustment for sidebar */
+        @media (max-width: 768px) {
+            .sidebar-closed { margin-left: -100%; }
+            #sidebar { width: 100%; position: absolute; height: 100%; z-index: 40; }
+        }
+    </style>
+</head>
+<body class="text-gray-800 h-screen flex flex-col overflow-hidden">
+
+    <header class="bg-slate-800 text-white h-14 flex items-center justify-between px-4 shadow-md z-20 shrink-0 gap-4">
+        
+        <div class="flex items-center gap-4">
+            <button onclick="toggleSidebar()" class="text-gray-300 hover:text-white focus:outline-none">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
+            <h1 class="text-lg font-bold whitespace-nowrap hidden sm:block">Wdlist</h1>
+        </div>
+
+        <div class="flex-1 max-w-2xl relative">
+            <div class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs"></i>
+                <input type="text" id="wd-search" 
+                    class="w-full bg-slate-700 text-white placeholder-gray-400 text-sm rounded-full pl-9 pr-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-slate-600 transition" 
+                    placeholder="Search Wikidata to add item...">
+            </div>
+            <div id="search-results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white text-gray-800 border border-gray-200 rounded shadow-xl max-h-64 overflow-y-auto z-50"></div>
+        </div>
+
+        <div id="notification" class="w-32 text-right">
+            <span class="hidden bg-green-500 text-white px-2 py-1 rounded text-xs font-bold transition-opacity" id="notif-badge">
+                Copied!
+            </span>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <aside id="sidebar" class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 relative">
+            <div class="p-2 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <span class="text-xs font-bold text-gray-500 uppercase ml-2">My Lists</span>
+                <button onclick="createNewList()" class="text-blue-600 hover:bg-blue-100 p-1.5 rounded transition" title="New List">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+            </div>
+            
+            <div id="lists-container" class="flex-1 overflow-y-auto p-1 space-y-0.5">
+                </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col h-full bg-gray-100 relative w-full">
+            
+            <div id="empty-state" class="hidden flex flex-col items-center justify-center h-full text-gray-400">
+                <i class="fa-solid fa-list-check text-4xl mb-3"></i>
+                <p class="text-sm">Select a list to edit</p>
+            </div>
+
+            <div id="editor-view" class="flex flex-col h-full hidden">
+                
+                <div class="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between shrink-0 shadow-sm z-10">
+                    <input type="text" id="list-name-input" 
+                        class="text-lg font-bold text-gray-800 border-none focus:ring-0 focus:outline-none bg-transparent w-full mr-4 placeholder-gray-300" 
+                        placeholder="Untitled List">
+                    
+                    <div class="flex gap-2 text-gray-500">
+                        <button onclick="exportWikitext()" class="hover:text-blue-600 p-1.5 rounded" title="Copy Wikitext">
+                            <i class="fa-solid fa-file-export"></i>
+                        </button>
+                        <button onclick="deleteCurrentList()" class="hover:text-red-600 p-1.5 rounded" title="Delete List">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="items-container" class="flex-1 overflow-y-auto p-2 space-y-1">
+                    </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- Data & State ---
+        let appData = { lists: [], activeListId: null };
+        const STATE_KEY = 'wikidata_compact_app_v2';
+
+        function loadData() {
+            const saved = localStorage.getItem(STATE_KEY);
+            if (saved) appData = JSON.parse(saved);
+        }
+        function saveData() {
+            localStorage.setItem(STATE_KEY, JSON.stringify(appData));
+        }
+
+        // --- DOM Elements ---
+        const sidebar = document.getElementById('sidebar');
+        const listsContainer = document.getElementById('lists-container');
+        const itemsContainer = document.getElementById('items-container');
+        const editorView = document.getElementById('editor-view');
+        const emptyState = document.getElementById('empty-state');
+        const nameInput = document.getElementById('list-name-input');
+        const searchInput = document.getElementById('wd-search');
+        const searchResults = document.getElementById('search-results');
+        const notifBadge = document.getElementById('notif-badge');
+
+        // --- Sidebar Logic ---
+        function toggleSidebar() {
+            sidebar.classList.toggle('sidebar-closed');
+        }
+
+        function renderSidebar() {
+            listsContainer.innerHTML = '';
+            appData.lists.forEach(list => {
+                const isActive = list.id === appData.activeListId;
+                const el = document.createElement('div');
+                // Compact sidebar item styling
+                el.className = `px-3 py-2 rounded-sm cursor-pointer flex items-center justify-between group text-sm ${isActive ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600' : 'hover:bg-gray-100 text-gray-700 border-l-2 border-transparent'}`;
+                el.innerHTML = `
+                    <span class="truncate font-medium flex-1">${list.name || 'Untitled'}</span>
+                    <span class="text-xs text-gray-400 ml-2 group-hover:hidden">${list.items.length}</span>
+                    <i class="fa-solid fa-grip-lines text-gray-300 text-xs hidden group-hover:block cursor-move list-drag-handle"></i>
+                `;
+                el.onclick = () => switchList(list.id);
+                listsContainer.appendChild(el);
+            });
+        }
+
+        function createNewList() {
+            const newList = { id: Date.now().toString(), name: 'New List', items: [] };
+            appData.lists.push(newList);
+            switchList(newList.id);
+            saveData();
+            setTimeout(() => nameInput.focus(), 50); // Auto focus title
+        }
+
+        function switchList(id) {
+            appData.activeListId = id;
+            renderSidebar();
+            renderEditor();
+        }
+
+        function deleteCurrentList() {
+            if (!confirm("Delete this list?")) return;
+            appData.lists = appData.lists.filter(l => l.id !== appData.activeListId);
+            appData.activeListId = appData.lists.length ? appData.lists[0].id : null;
+            saveData();
+            renderSidebar();
+            renderEditor();
+        }
+
+        // --- Editor Logic ---
+        function renderEditor() {
+            const list = appData.lists.find(l => l.id === appData.activeListId);
+
+            if (!list) {
+                editorView.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                // Disable search if no list active
+                searchInput.disabled = true;
+                searchInput.placeholder = "Create a list first...";
+                return;
+            }
+
+            // Enable search
+            searchInput.disabled = false;
+            searchInput.placeholder = `Add item to '${list.name}'...`;
+
+            emptyState.classList.add('hidden');
+            editorView.classList.remove('hidden');
+            nameInput.value = list.name;
+
+            itemsContainer.innerHTML = '';
+            list.items.forEach((item, index) => {
+                const hasComment = item.comment && item.comment.trim().length > 0;
+                
+                const itemEl = document.createElement('div');
+                // Compact Item Card
+                itemEl.className = 'bg-white border border-gray-200 rounded hover:shadow-sm group';
+                itemEl.innerHTML = `
+                    <div class="flex items-center p-2 gap-2">
+                        <div class="text-gray-300 cursor-grab active:cursor-grabbing hover:text-gray-500 item-drag-handle px-1">
+                            <i class="fa-solid fa-grip-vertical text-xs"></i>
+                        </div>
+                        
+                        <div class="flex-1 min-w-0 flex items-center gap-2">
+                            <a href="https://www.wikidata.org/wiki/${item.qid}" target="_blank" class="text-blue-700 font-semibold hover:underline truncate text-sm">
+                                ${item.label}
+                            </a>
+                            <span class="text-xs text-gray-400 font-mono">${item.qid}</span>
+                            <span class="text-xs text-gray-500 truncate hidden sm:block border-l pl-2 border-gray-200">${item.desc || ''}</span>
+                        </div>
+
+                        <div class="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                            <button onclick="toggleComment(${index})" class="p-1.5 rounded hover:bg-gray-100 text-gray-500 ${hasComment ? 'text-blue-500' : ''}" title="Toggle Comment">
+                                <i class="fa-regular fa-comment-dots"></i>
+                            </button>
+                            <button onclick="deleteItem(${index})" class="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500" title="Remove">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="comment-box-${index}" class="${hasComment ? 'block' : 'hidden'} px-2 pb-2 pl-9">
+                        <input type="text" 
+                            class="w-full text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-300 text-gray-600"
+                            placeholder="Add note..."
+                            value="${item.comment || ''}"
+                            onchange="updateComment(${index}, this.value)">
+                    </div>
+                `;
+                itemsContainer.appendChild(itemEl);
+            });
+        }
+
+        nameInput.addEventListener('input', (e) => {
+            const list = appData.lists.find(l => l.id === appData.activeListId);
+            if (list) { list.name = e.target.value; saveData(); renderSidebar(); }
+        });
+
+        // --- Item Actions ---
+        function toggleComment(index) {
+            const box = document.getElementById(`comment-box-${index}`);
+            box.classList.toggle('hidden');
+            if (!box.classList.contains('hidden')) {
+                box.querySelector('input').focus();
+            }
+        }
+
+        function updateComment(index, val) {
+            const list = appData.lists.find(l => l.id === appData.activeListId);
+            if (list) {
+                list.items[index].comment = val;
+                saveData();
+                // Rerender specifically to update icon color if needed
+                renderEditor();
+            }
+        }
+
+        function deleteItem(index) {
+            const list = appData.lists.find(l => l.id === appData.activeListId);
+            if (list) {
+                list.items.splice(index, 1);
+                saveData();
+                renderSidebar(); // Update count
+                renderEditor();
+            }
+        }
+
+        // --- Wikidata Search ---
+        let debounceTimer;
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            const q = e.target.value.trim();
+            if (q.length < 2) { searchResults.classList.add('hidden'); return; }
+            debounceTimer = setTimeout(() => doSearch(q), 300);
+        });
+
+        async function doSearch(query) {
+            try {
+                const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(query)}&language=en&format=json&origin=*`;
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                searchResults.innerHTML = '';
+                if (!data.search || data.search.length === 0) {
+                    searchResults.classList.add('hidden');
+                    return;
+                }
+
+                searchResults.classList.remove('hidden');
+                data.search.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-0';
+                    div.innerHTML = `
+                        <div class="text-sm font-semibold text-gray-700">${item.label}</div>
+                        <div class="text-xs text-gray-500 truncate">${item.description || 'No description'}</div>
+                    `;
+                    div.onmousedown = (e) => { e.preventDefault(); }; // Prevent blur
+                    div.onclick = () => {
+                        addItem(item.id, item.label, item.description);
+                        searchInput.value = '';
+                        searchResults.classList.add('hidden');
+                    };
+                    searchResults.appendChild(div);
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        // Close search on click outside
+        document.addEventListener('focusin', (e) => {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) searchResults.classList.add('hidden');
+        });
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) searchResults.classList.add('hidden');
+        });
+
+        function addItem(qid, label, desc) {
+            const list = appData.lists.find(l => l.id === appData.activeListId);
+            if (!list) return; // Should be handled by UI state
+            list.items.push({ qid, label, desc, comment: '' });
+            saveData();
+            renderSidebar();
+            renderEditor();
+            // Scroll to bottom
+            itemsContainer.scrollTop = itemsContainer.scrollHeight;
+        }
+
+        // --- Export ---
+        function exportWikitext() {
+            const list = appData.lists.find(l => l.id === appData.activeListId);
+            if (!list) return;
+
+            let txt = `== ${list.name} ==\n`;
+            list.items.forEach(i => {
+                txt += `* {{Q|${i.qid}}}`;
+                if (i.comment) txt += ` - ${i.comment}`;
+                txt += '\n';
+            });
+
+            navigator.clipboard.writeText(txt).then(() => {
+                notifBadge.classList.remove('hidden');
+                setTimeout(() => notifBadge.classList.add('hidden'), 2000);
+            });
+        }
+
+        // --- Drag & Drop ---
+        new Sortable(listsContainer, {
+            animation: 150, handle: '.list-drag-handle', ghostClass: 'ghost',
+            onEnd: (evt) => {
+                const item = appData.lists.splice(evt.oldIndex, 1)[0];
+                appData.lists.splice(evt.newIndex, 0, item);
+                saveData();
+            }
+        });
+
+        new Sortable(itemsContainer, {
+            animation: 150, handle: '.item-drag-handle', ghostClass: 'ghost',
+            onEnd: (evt) => {
+                const list = appData.lists.find(l => l.id === appData.activeListId);
+                const item = list.items.splice(evt.oldIndex, 1)[0];
+                list.items.splice(evt.newIndex, 0, item);
+                saveData();
+            }
+        });
+
+        // --- Init ---
+        loadData();
+        renderSidebar();
+        if (appData.lists.length && !appData.activeListId) appData.activeListId = appData.lists[0].id;
+        renderEditor();
+
+    </script>
+</body>
+</html>
