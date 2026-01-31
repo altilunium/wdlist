@@ -9,3 +9,6 @@
 
 
 https://altilunium.github.io/wdlist/
+
+## Development Blog
+* v26.1.31 - [https://rtnf.substack.com/p/another-attempt-to-visualize-time Another attempt to visualize time and space]
