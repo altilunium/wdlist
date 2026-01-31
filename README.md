@@ -11,4 +11,4 @@
 https://altilunium.github.io/wdlist/
 
 ## Development Blog
-* v26.1.31 - [https://rtnf.substack.com/p/another-attempt-to-visualize-time Another attempt to visualize time and space]
+* v26.1.31 - [Another attempt to visualize time and space](https://rtnf.substack.com/p/another-attempt-to-visualize-time)
